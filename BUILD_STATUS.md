@@ -30,7 +30,21 @@ is not proof of functioning rear-matrix animation. No hardware-tested claim is m
 
 ## GitHub Actions
 
-Workflow prepared in `.github/workflows/build-apk.yml`; uploads the APK only after
-compile, tests and lint succeed. Remote run status must be checked after publishing.
-Repository access verified for hf-keo/glypheye. Remote build result is pending the
-first workflow run; local verification above remains independent of CI.
+## GitHub Actions: PASSED
+
+Run: https://github.com/hf-keo/glypheye/actions/runs/41390421146
+
+- Tested commit: `7aa785ad30afdd002ea82506af0e488519180528`.
+- Overall conclusion: **success**.
+- Compilation, unit tests, lint and APK artifact upload all passed on Ubuntu.
+- Download: https://github.com/hf-keo/glypheye/actions/runs/41390421146/artifacts/13117176646
+- Artifact `GravityEyes-debug-APK` contains the debug APK and its checksum.
+- `validation-reports` contains the CI test and lint reports.
+- The first run failed before compilation because setup-android tried to install
+  Google's removed legacy `tools` package. Workflow corrected to install only
+  `platform-tools`, with platform/build tools installed in the following step.
+
+CI uses its own temporary debug signing key. The local APK checksum above describes
+the local artifact, not the independently signed CI APK. Neither build has been
+installed or exercised on physical Nothing hardware.
+
