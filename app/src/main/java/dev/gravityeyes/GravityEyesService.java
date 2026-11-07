@@ -13,6 +13,9 @@ public final class GravityEyesService extends Service implements SensorEventList
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final EyePhysics eyes = new EyePhysics();
     private final PupilMotion motion = new PupilMotion();
+    private final java.util.Random blinkRandom = new java.util.Random();
+    private long nextBlink, blinkStarted;
+    private boolean blinking;
     private GlyphMatrixManager matrix;
     private SensorManager sensors;
     private boolean active, ready, screenAwake = true, receiverRegistered;
@@ -36,7 +39,7 @@ public final class GravityEyesService extends Service implements SensorEventList
         if (active && ready) { settings = EyeSettings.load(GravityEyesService.this); handler.removeCallbacks(tick); handler.post(tick); }
     }
     private float openness(long now) {
-        if (eyelidStarted == 0) return screenAwake ? 1f : 0f;
+        if (eyelidStarted == 0) return (screenAwake || (settings!=null && "open".equals(settings.lockBehavior))) ? 1f : 0f;
         float t = Math.min(1f, Math.max(0f, (now - eyelidStarted) / (float) eyelidDuration()));
         t = t*t*(3f-2f*t);
         return eyelidFrom + (eyelidTo-eyelidFrom)*t;
@@ -59,9 +62,19 @@ public final class GravityEyesService extends Service implements SensorEventList
             long now = SystemClock.elapsedRealtimeNanos();
             float dt = lastFrame == 0 ? 1f/30 : (now-lastFrame)*1e-9f;
             lastFrame = now;
-            motion.update(eyes,settings.motion,gx,gy,dt,SystemClock.uptimeMillis(),settings.wanderInterval);
+            long frameTime=SystemClock.uptimeMillis();
+            motion.update(eyes,settings.motion,gx,gy,dt,frameTime,settings.wanderInterval);
+            float eyeOpen=openness(frameTime);
+            if(settings.randomBlink && eyeOpen>=0.99f && !blinking){
+                if(nextBlink==0)nextBlink=frameTime+settings.blinkInterval/2+(long)(blinkRandom.nextFloat()*settings.blinkInterval);
+                if(frameTime>=nextBlink){blinking=true;blinkStarted=frameTime;nextBlink=0;}
+            }
+            if(blinking){float phase=(frameTime-blinkStarted)/(float)Math.max(80,settings.blinkDuration);
+                if(phase>=1f){blinking=false;nextBlink=0;}
+                else if(eyeOpen>=0.99f)eyeOpen*=phase<0.5f?1f-2f*phase:2f*phase-1f;
+            }
             try {
-                bitmap.setPixels(EyeRenderer.pixels(eyes, openness(SystemClock.uptimeMillis()), settings.closing, settings.sleeping, settings.tilt), 0, 13, 0, 0, 13, 13);
+                bitmap.setPixels(EyeRenderer.pixels(eyes, eyeOpen, settings.closing, settings.sleeping, settings.tilt), 0, 13, 0, 0, 13, 13);
                 GlyphMatrixObject object = new GlyphMatrixObject.Builder().setImageSource(bitmap).setBrightness(Math.max(1, Math.min(255, Math.round(settings.brightness * 2.55f)))).build();
                 // Use the structured frame: SDK selects the device's matrix length.
                 matrix.setMatrixFrame(new GlyphMatrixFrame.Builder().addTop(object).build(GravityEyesService.this));
@@ -72,7 +85,7 @@ public final class GravityEyesService extends Service implements SensorEventList
     @Override public IBinder onBind(Intent intent) {
         active = true; lastFrame = 0; lastSensor = 0; gx = gy = 0;
         settings = EyeSettings.load(this);
-        motion.reset();
+        motion.reset();nextBlink=0;blinking=false;
         PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
         screenAwake = power == null || power.isInteractive();
         eyelidStarted = 0; eyelidFrom = eyelidTo = (screenAwake || "open".equals(settings.lockBehavior)) ? 1f : 0f;
