@@ -13,7 +13,8 @@ import android.widget.*;
 public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private int duration=400,brightness=70,tilt=0;
-    private String closing="center",sleeping="line";
+    private String closing="center",sleeping="line",motionMode="gravity",lockBehavior="sleep";
+    private int wanderInterval=1800;
     private Preview preview;
     private TextView status;
     private boolean loop=false;
@@ -25,7 +26,7 @@ public final class MainActivity extends Activity {
         TextView t=new TextView(this);t.setText(s);t.setTextColor(0xfff1f1f1);t.setTextSize(size);
         t.setPadding(0,dp(10),0,dp(6));return t;
     }
-    private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping);}
+    private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping,motionMode,lockBehavior,wanderInterval);}
     private void transition(float target){from=openness;to=target;started=SystemClock.uptimeMillis();status.setText(target==0?"CLOSING...":"OPENING...");}
     private void actionButton(LinearLayout row,String name,Runnable action){
         Button b=new Button(this);b.setText(name);b.setTextAllCaps(false);
@@ -60,7 +61,7 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         getWindow().setStatusBarColor(0xff101112);getWindow().setNavigationBarColor(0xff101112);
         EyeSettings s=EyeSettings.load(this);
-        duration=s.duration;brightness=s.brightness;tilt=s.tilt;closing=s.closing;sleeping=s.sleeping;
+        duration=s.duration;brightness=s.brightness;tilt=s.tilt;closing=s.closing;sleeping=s.sleeping;motionMode=s.motion;lockBehavior=s.lockBehavior;wanderInterval=s.wanderInterval;
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(0xff101112);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(20),dp(16),dp(20),dp(24));
         scroll.addView(root);setContentView(scroll);
@@ -74,6 +75,10 @@ public final class MainActivity extends Activity {
         r=row(root);
         actionButton(r,"↻ Auto preview",()->{loop=!loop;lastLoop=0;});
         actionButton(r,"◉ Blink",()->{loop=false;blinkReturn=true;transition(0);});
+        root.addView(label("PUPIL BEHAVIOR",18));
+        dropdown(root,"Pupil movement",new String[]{"Follow gravity","Random wandering"},new String[]{"gravity","random"},motionMode,v->{motionMode=v;preview.resetMotion();});
+        dropdown(root,"When screen locks",new String[]{"Close eyes (sleep)","Keep eyes open"},new String[]{"sleep","open"},lockBehavior,v->lockBehavior=v);
+        slider(root,"Random glance interval (400–6000 ms)",56,(wanderInterval-400)/100,p->wanderInterval=400+p*100);
         root.addView(label("CUSTOMIZATION",18));
         slider(root,"Eyelid animation duration: change then preview",1100,duration-100,p->{duration=100+p;});
         dropdown(root,"Closing style",new String[]{"Symmetrical closing","Upper eyelid drops","Lower eyelid rises"},new String[]{"center","top","bottom"},closing,v->closing=v);
@@ -82,16 +87,22 @@ public final class MainActivity extends Activity {
         slider(root,"Pupil horizontal tilt",4,tilt+2,p->tilt=p-2);
         Button toy=new Button(this);toy.setText("Open Glyph Toys");root.addView(toy);
         toy.setOnClickListener(v->{try{startActivity(new Intent().setComponent(new ComponentName("com.nothing.thirdparty","com.nothing.thirdparty.matrix.toys.manager.ToysManagerActivity")));}catch(Exception e){Toast.makeText(this,"Open Settings → Glyph Interface → Glyph Toys manually.",Toast.LENGTH_LONG).show();}});
-        root.addView(label("Settings save automatically and are used by the rear Glyph Toy when it runs. Nothing OS controls AOD visibility.",12));
+        root.addView(label("Settings save automatically. The preview uses simulated gravity when Gravity is selected; the rear Glyph Toy uses the real accelerometer. Reopen the Glyph Toy after changing movement mode. Nothing OS controls AOD visibility.",12));
     }
     private final class Preview extends View {
         private final Paint paint=new Paint(3);
         private final EyePhysics physics=new EyePhysics();
+        private final PupilMotion pupilMotion=new PupilMotion();
+        private long lastDraw=0;
+        void resetMotion(){pupilMotion.reset();}
         Preview(){super(MainActivity.this);setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
         @Override protected void onDraw(Canvas c){
             super.onDraw(c);
             c.drawColor(0xff080909);
             long now=SystemClock.uptimeMillis();
+            float dt=lastDraw==0?1f/30f:Math.min(0.05f,(now-lastDraw)/1000f);
+            lastDraw=now;
+            pupilMotion.update(physics,motionMode,0f,0f,dt,now,wanderInterval);
             if(started>0){
                 float t=Math.min(1f,(now-started)/(float)Math.max(100,duration));
                 float eased=t*t*(3f-2f*t);openness=from+(to-from)*eased;
