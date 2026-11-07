@@ -72,7 +72,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(0xff101112);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(20),dp(16),dp(20),dp(24));
         scroll.addView(root);setContentView(scroll);
-        TextView heading=label("GLYPH EYES",24);heading.setTypeface(null,1);root.addView(heading);
+        TextView heading=label("GLYPH EYES",24);heading.setTypeface(null,android.graphics.Typeface.BOLD);root.addView(heading);
         root.addView(label("13 × 13 MATRIX  /  ANIMATION LAB",12));
         status=label("AWAKE",13);status.setTextColor(0xffd6f36b);root.addView(status);
         preview=new Preview();root.addView(preview,new LinearLayout.LayoutParams(-1,dp(290)));
