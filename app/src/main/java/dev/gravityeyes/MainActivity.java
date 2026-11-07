@@ -4,13 +4,20 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.content.*;
 import android.graphics.*;
+import android.hardware.*;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.*;
 import android.widget.*;
 
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements SensorEventListener {
+    private SensorManager sensorManager;
+    private float gravityX, gravityY;
+    @Override protected void onResume(){super.onResume();sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE);if(sensorManager!=null){Sensor a=sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);if(a!=null)sensorManager.registerListener(this,a,SensorManager.SENSOR_DELAY_GAME);}}
+    @Override protected void onPause(){if(sensorManager!=null)sensorManager.unregisterListener(this);super.onPause();}
+    @Override public void onSensorChanged(SensorEvent event){gravityX=event.values[0]/SensorManager.GRAVITY_EARTH;gravityY=event.values[1]/SensorManager.GRAVITY_EARTH;}
+    @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
     private final Handler handler=new Handler(Looper.getMainLooper());
     private int duration=400,brightness=70,tilt=0;
     private String closing="center",sleeping="line",motionMode="gravity",lockBehavior="sleep";
@@ -87,7 +94,7 @@ public final class MainActivity extends Activity {
         slider(root,"Pupil horizontal tilt",4,tilt+2,p->tilt=p-2);
         Button toy=new Button(this);toy.setText("Open Glyph Toys");root.addView(toy);
         toy.setOnClickListener(v->{try{startActivity(new Intent().setComponent(new ComponentName("com.nothing.thirdparty","com.nothing.thirdparty.matrix.toys.manager.ToysManagerActivity")));}catch(Exception e){Toast.makeText(this,"Open Settings → Glyph Interface → Glyph Toys manually.",Toast.LENGTH_LONG).show();}});
-        root.addView(label("Settings save automatically. The preview uses simulated gravity when Gravity is selected; the rear Glyph Toy uses the real accelerometer. Reopen the Glyph Toy after changing movement mode. Nothing OS controls AOD visibility.",12));
+        root.addView(label("Settings save automatically. Gravity mode uses your phone accelerometer in both the preview and rear Glyph Toy. Reopen the Glyph Toy after changing movement mode. Nothing OS controls AOD visibility.",12));
     }
     private final class Preview extends View {
         private final Paint paint=new Paint(3);
@@ -102,7 +109,7 @@ public final class MainActivity extends Activity {
             long now=SystemClock.uptimeMillis();
             float dt=lastDraw==0?1f/30f:Math.min(0.05f,(now-lastDraw)/1000f);
             lastDraw=now;
-            pupilMotion.update(physics,motionMode,0f,0f,dt,now,wanderInterval);
+            pupilMotion.update(physics,motionMode,gravityX,gravityY,dt,now,wanderInterval);
             if(started>0){
                 float t=Math.min(1f,(now-started)/(float)Math.max(100,duration));
                 float eased=t*t*(3f-2f*t);openness=from+(to-from)*eased;
