@@ -12,6 +12,7 @@ import com.nothing.ketchum.*;
 public final class GravityEyesService extends Service implements SensorEventListener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final EyePhysics eyes = new EyePhysics();
+    private final PupilMotion motion = new PupilMotion();
     private GlyphMatrixManager matrix;
     private SensorManager sensors;
     private boolean active, ready, screenAwake = true, receiverRegistered;
@@ -28,7 +29,8 @@ public final class GravityEyesService extends Service implements SensorEventList
     private void animateEyelids(boolean awake) {
         long now = SystemClock.uptimeMillis();
         eyelidFrom = openness(now);
-        eyelidTo = awake ? 1f : 0f;
+        settings = EyeSettings.load(GravityEyesService.this);
+        eyelidTo = awake || "open".equals(settings.lockBehavior) ? 1f : 0f;
         eyelidStarted = now;
         screenAwake = awake;
         if (active && ready) { settings = EyeSettings.load(GravityEyesService.this); handler.removeCallbacks(tick); handler.post(tick); }
@@ -57,7 +59,7 @@ public final class GravityEyesService extends Service implements SensorEventList
             long now = SystemClock.elapsedRealtimeNanos();
             float dt = lastFrame == 0 ? 1f/30 : (now-lastFrame)*1e-9f;
             lastFrame = now;
-            eyes.step(gx, gy, dt);
+            motion.update(eyes,settings.motion,gx,gy,dt,SystemClock.uptimeMillis(),settings.wanderInterval);
             try {
                 bitmap.setPixels(EyeRenderer.pixels(eyes, openness(SystemClock.uptimeMillis()), settings.closing, settings.sleeping, settings.tilt), 0, 13, 0, 0, 13, 13);
                 GlyphMatrixObject object = new GlyphMatrixObject.Builder().setImageSource(bitmap).setBrightness(Math.max(1, Math.min(255, Math.round(settings.brightness * 2.55f)))).build();
@@ -70,9 +72,10 @@ public final class GravityEyesService extends Service implements SensorEventList
     @Override public IBinder onBind(Intent intent) {
         active = true; lastFrame = 0; lastSensor = 0; gx = gy = 0;
         settings = EyeSettings.load(this);
+        motion.reset();
         PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
         screenAwake = power == null || power.isInteractive();
-        eyelidStarted = 0; eyelidFrom = eyelidTo = screenAwake ? 1f : 0f;
+        eyelidStarted = 0; eyelidFrom = eyelidTo = (screenAwake || "open".equals(settings.lockBehavior)) ? 1f : 0f;
         if (!receiverRegistered) {
             IntentFilter filter = new IntentFilter();
             filter.addAction(Intent.ACTION_SCREEN_OFF);
@@ -90,7 +93,7 @@ public final class GravityEyesService extends Service implements SensorEventList
                         ready = matrix.register(Glyph.DEVICE_25111p);
                         if (!ready) { stopToy(); return; }
                         Sensor accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-                        if (accelerometer != null) sensors.registerListener(GravityEyesService.this, accelerometer, SensorManager.SENSOR_DELAY_GAME, handler);
+                        if (accelerometer != null && "gravity".equals(settings.motion)) sensors.registerListener(GravityEyesService.this, accelerometer, SensorManager.SENSOR_DELAY_GAME, handler);
                         handler.removeCallbacks(tick); handler.post(tick);
                     } catch (Exception e) { Log.e("GravityEyes", "SDK setup failed", e); stopToy(); }
                 }
