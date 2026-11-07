@@ -14,7 +14,30 @@ public final class GravityEyesService extends Service implements SensorEventList
     private final EyePhysics eyes = new EyePhysics();
     private GlyphMatrixManager matrix;
     private SensorManager sensors;
-    private boolean active, ready;
+    private boolean active, ready, screenAwake = true, receiverRegistered;
+    private long eyelidStarted;
+    private float eyelidFrom = 1f, eyelidTo = 1f;
+    private static final long EYELID_MS = 400L;
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) animateEyelids(false);
+            else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) animateEyelids(true);
+        }
+    };
+    private void animateEyelids(boolean awake) {
+        long now = SystemClock.uptimeMillis();
+        eyelidFrom = openness(now);
+        eyelidTo = awake ? 1f : 0f;
+        eyelidStarted = now;
+        screenAwake = awake;
+        if (active && ready) { handler.removeCallbacks(tick); handler.post(tick); }
+    }
+    private float openness(long now) {
+        if (eyelidStarted == 0) return screenAwake ? 1f : 0f;
+        float t = Math.min(1f, Math.max(0f, (now - eyelidStarted) / (float) EYELID_MS));
+        t = t*t*(3f-2f*t);
+        return eyelidFrom + (eyelidTo-eyelidFrom)*t;
+    }
     private float gx, gy;
     private long lastFrame, lastSensor;
     private final Bitmap bitmap = Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888);
@@ -35,7 +58,7 @@ public final class GravityEyesService extends Service implements SensorEventList
             lastFrame = now;
             eyes.step(gx, gy, dt);
             try {
-                bitmap.setPixels(EyeRenderer.pixels(eyes), 0, 13, 0, 0, 13, 13);
+                bitmap.setPixels(EyeRenderer.pixels(eyes, openness(SystemClock.uptimeMillis())), 0, 13, 0, 0, 13, 13);
                 GlyphMatrixObject object = new GlyphMatrixObject.Builder().setImageSource(bitmap).setBrightness(160).build();
                 // Use the structured frame: SDK selects the device's matrix length.
                 matrix.setMatrixFrame(new GlyphMatrixFrame.Builder().addTop(object).build(GravityEyesService.this));
@@ -45,6 +68,16 @@ public final class GravityEyesService extends Service implements SensorEventList
     };
     @Override public IBinder onBind(Intent intent) {
         active = true; lastFrame = 0; lastSensor = 0; gx = gy = 0;
+        PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
+        screenAwake = power == null || power.isInteractive();
+        eyelidStarted = 0; eyelidFrom = eyelidTo = screenAwake ? 1f : 0f;
+        if (!receiverRegistered) {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(Intent.ACTION_SCREEN_OFF);
+            filter.addAction(Intent.ACTION_SCREEN_ON);
+            registerReceiver(screenReceiver, filter);
+            receiverRegistered = true;
+        }
         sensors = (SensorManager)getSystemService(SENSOR_SERVICE);
         matrix = GlyphMatrixManager.getInstance(getApplicationContext());
         try {
@@ -81,6 +114,7 @@ public final class GravityEyesService extends Service implements SensorEventList
         active = ready = false;
         handler.removeCallbacksAndMessages(null);
         if (sensors != null) sensors.unregisterListener(this);
+        if (receiverRegistered) { unregisterReceiver(screenReceiver); receiverRegistered = false; }
         GlyphMatrixManager old = matrix; matrix = null;
         if (old != null) { try { old.turnOff(); } catch (Exception e) { Log.w("GravityEyes", "Turn off failed", e); }
             try { old.unInit(); } catch (Exception e) { Log.w("GravityEyes", "Unbind failed", e); } }
