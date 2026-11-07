@@ -36,7 +36,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
     private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping,motionMode,lockBehavior,wanderInterval);}
     private void transition(float target){from=openness;to=target;started=SystemClock.uptimeMillis();status.setText(target==0?"CLOSING...":"OPENING...");}
     private void actionButton(LinearLayout row,String name,Runnable action){
-        Button b=new Button(this);b.setText(name);b.setTextAllCaps(false);
+        Button b=new Button(this);b.setText(name);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(52),1);lp.setMargins(dp(3),0,dp(3),0);
         row.addView(b,lp);b.setOnClickListener(v->action.run());
     }
