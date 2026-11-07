@@ -21,7 +21,11 @@ public final class MainActivity extends Activity implements SensorEventListener 
     private final Handler handler=new Handler(Looper.getMainLooper());
     private int duration=400,brightness=70,tilt=0;
     private String closing="center",sleeping="line",motionMode="gravity",lockBehavior="sleep";
-    private int wanderInterval=1800;
+    private int wanderInterval=1800,blinkInterval=5000,blinkDuration=180;
+    private boolean randomBlink=false;
+    private final java.util.Random blinkRandom=new java.util.Random();
+    private long nextBlink=0,blinkStarted=0;
+    private boolean blinking=false;
     private Preview preview;
     private TextView status;
     private boolean loop=false;
@@ -33,7 +37,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
         TextView t=new TextView(this);t.setText(s);t.setTextColor(0xfff1f1f1);t.setTextSize(size);
         t.setPadding(0,dp(10),0,dp(6));return t;
     }
-    private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping,motionMode,lockBehavior,wanderInterval);}
+    private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping,motionMode,lockBehavior,wanderInterval,randomBlink,blinkInterval,blinkDuration);}
     private void transition(float target){from=openness;to=target;started=SystemClock.uptimeMillis();status.setText(target==0?"CLOSING...":"OPENING...");}
     private void actionButton(LinearLayout row,String name,Runnable action){
         Button b=new Button(this);b.setText(name);
@@ -43,11 +47,13 @@ public final class MainActivity extends Activity implements SensorEventListener 
     private LinearLayout row(LinearLayout parent){
         LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.HORIZONTAL);parent.addView(r);return r;
     }
-    private void slider(LinearLayout root,String name,int max,int progress,java.util.function.IntConsumer changed){
-        TextView title=label(name,14);root.addView(title);
+    private void slider(LinearLayout root,String name,int max,int progress,java.util.function.IntConsumer changed,java.util.function.Supplier<String> display){
+        LinearLayout header=row(root);
+        TextView title=label(name,14);header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        TextView number=label(display.get(),14);number.setTextColor(0xffd6f36b);number.setPadding(dp(8),dp(10),0,dp(6));header.addView(number);
         SeekBar bar=new SeekBar(this);bar.setMax(max);bar.setProgress(progress);root.addView(bar);
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar b,int p,boolean user){if(user){changed.accept(p);save();preview.invalidate();}}
+            public void onProgressChanged(SeekBar b,int p,boolean user){if(user){changed.accept(p);number.setText(display.get());save();preview.invalidate();}}
             public void onStartTrackingTouch(SeekBar b){}
             public void onStopTrackingTouch(SeekBar b){}
         });
@@ -68,7 +74,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
         super.onCreate(state);
         getWindow().setStatusBarColor(0xff101112);getWindow().setNavigationBarColor(0xff101112);
         EyeSettings s=EyeSettings.load(this);
-        duration=s.duration;brightness=s.brightness;tilt=s.tilt;closing=s.closing;sleeping=s.sleeping;motionMode=s.motion;lockBehavior=s.lockBehavior;wanderInterval=s.wanderInterval;
+        duration=s.duration;brightness=s.brightness;tilt=s.tilt;closing=s.closing;sleeping=s.sleeping;motionMode=s.motion;lockBehavior=s.lockBehavior;wanderInterval=s.wanderInterval;randomBlink=s.randomBlink;blinkInterval=s.blinkInterval;blinkDuration=s.blinkDuration;
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(0xff101112);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(20),dp(16),dp(20),dp(24));
         scroll.addView(root);setContentView(scroll);
@@ -85,13 +91,18 @@ public final class MainActivity extends Activity implements SensorEventListener 
         root.addView(label("PUPIL BEHAVIOR",18));
         dropdown(root,"Pupil movement",new String[]{"Follow gravity","Random wandering"},new String[]{"gravity","random"},motionMode,v->{motionMode=v;preview.resetMotion();});
         dropdown(root,"When screen locks",new String[]{"Close eyes (sleep)","Keep eyes open"},new String[]{"sleep","open"},lockBehavior,v->lockBehavior=v);
-        slider(root,"Random glance interval (400–6000 ms)",56,(wanderInterval-400)/100,p->wanderInterval=400+p*100);
+        slider(root,"Random glance interval",56,(wanderInterval-400)/100,p->wanderInterval=400+p*100,()->String.format(java.util.Locale.US,"%.1f s",wanderInterval/1000f));
+        root.addView(label("BLINKING",18));
+        Switch blinkSwitch=new Switch(this);blinkSwitch.setText("Random blinking");blinkSwitch.setTextColor(0xfff1f1f1);blinkSwitch.setChecked(randomBlink);root.addView(blinkSwitch);
+        blinkSwitch.setOnCheckedChangeListener((button,checked)->{randomBlink=checked;nextBlink=0;blinking=false;save();});
+        slider(root,"Average blink interval",96,(blinkInterval-2000)/250,p->{blinkInterval=2000+p*250;nextBlink=0;},()->String.format(java.util.Locale.US,"%.1f s",blinkInterval/1000f));
+        slider(root,"Blink duration",22,(blinkDuration-80)/20,p->blinkDuration=80+p*20,()->blinkDuration+" ms");
         root.addView(label("CUSTOMIZATION",18));
-        slider(root,"Eyelid animation duration: change then preview",1100,duration-100,p->{duration=100+p;});
+        slider(root,"Sleep / wake duration",1100,duration-100,p->{duration=100+p;},()->duration+" ms");
         dropdown(root,"Closing style",new String[]{"Symmetrical closing","Upper eyelid drops","Lower eyelid rises"},new String[]{"center","top","bottom"},closing,v->closing=v);
         dropdown(root,"Sleeping eyes",new String[]{"Thin horizontal line","Completely dark","Curved sleepy eyes"},new String[]{"line","off","arc"},sleeping,v->sleeping=v);
-        slider(root,"LED brightness",85,brightness-15,p->brightness=15+p);
-        slider(root,"Pupil horizontal tilt",4,tilt+2,p->tilt=p-2);
+        slider(root,"LED brightness",85,brightness-15,p->brightness=15+p,()->brightness+"%");
+        slider(root,"Pupil horizontal tilt",4,tilt+2,p->tilt=p-2,()->(tilt>0?"+":"")+tilt);
         Button toy=new Button(this);toy.setText("Open Glyph Toys");root.addView(toy);
         toy.setOnClickListener(v->{try{startActivity(new Intent().setComponent(new ComponentName("com.nothing.thirdparty","com.nothing.thirdparty.matrix.toys.manager.ToysManagerActivity")));}catch(Exception e){Toast.makeText(this,"Open Settings → Glyph Interface → Glyph Toys manually.",Toast.LENGTH_LONG).show();}});
         root.addView(label("Settings save automatically. Gravity mode uses your phone accelerometer in both the preview and rear Glyph Toy. Reopen the Glyph Toy after changing movement mode. Nothing OS controls AOD visibility.",12));
@@ -110,13 +121,21 @@ public final class MainActivity extends Activity implements SensorEventListener 
             float dt=lastDraw==0?1f/30f:Math.min(0.05f,(now-lastDraw)/1000f);
             lastDraw=now;
             pupilMotion.update(physics,motionMode,gravityX,gravityY,dt,now,wanderInterval);
+            if(randomBlink && !blinking && started==0 && openness>=0.99f){
+                if(nextBlink==0)nextBlink=now+blinkInterval/2+(long)(blinkRandom.nextFloat()*blinkInterval);
+                if(now>=nextBlink){blinking=true;blinkStarted=now;nextBlink=0;}
+            }
+            float blinkOpenness=1f;
+            if(blinking){float phase=(now-blinkStarted)/(float)Math.max(80,blinkDuration);
+                if(phase>=1f){blinking=false;nextBlink=0;}else blinkOpenness=phase<0.5f?1f-2f*phase:2f*phase-1f;
+            }
             if(started>0){
                 float t=Math.min(1f,(now-started)/(float)Math.max(100,duration));
                 float eased=t*t*(3f-2f*t);openness=from+(to-from)*eased;
                 if(t>=1){started=0;openness=to;status.setText(openness<.13f?"SLEEPING":"AWAKE");if(blinkReturn&&to==0){blinkReturn=false;transition(1);}}
             }
             if(loop&&started==0&&(lastLoop==0||now-lastLoop>1250)){lastLoop=now;transition(to==0?1:0);}
-            int[] pixels=EyeRenderer.pixels(physics,openness,closing,sleeping,tilt);
+            int[] pixels=EyeRenderer.pixels(physics,openness*blinkOpenness,closing,sleeping,tilt);
             float unit=Math.min(getWidth(),getHeight())/15f;
             float left=(getWidth()-13*unit)/2f,top=(getHeight()-13*unit)/2f;
             for(int y=0;y<13;y++)for(int x=0;x<13;x++){
