@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#101113" android:padding="8dp">
+    <ImageView android:id="@+id/widget_eyes"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:contentDescription="Glyph Eyes mirrored display"
+        android:scaleType="fitCenter" />
+</FrameLayout>
