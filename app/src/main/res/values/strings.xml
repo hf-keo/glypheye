@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Gravity Eyes</string>
     <string name="toy_summary">Two curious pupils that fall, bounce and settle as you tilt your phone.</string>
+    <string name="widget_description">Live 2x2 mirror of Glyph Eyes. Tap to customize.</string>
 </resources>
