@@ -45,7 +45,7 @@ public final class GravityEyesService extends Service implements SensorEventList
         return eyelidFrom + (eyelidTo-eyelidFrom)*t;
     }
     private float gx, gy;
-    private long lastFrame, lastSensor;
+    private long lastFrame, lastSensor, lastWidgetFrame;
     private final Bitmap bitmap = Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888);
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
         @Override public void handleMessage(Message msg) {
@@ -74,7 +74,10 @@ public final class GravityEyesService extends Service implements SensorEventList
                 else if(eyeOpen>=0.99f)eyeOpen*=phase<0.5f?1f-2f*phase:2f*phase-1f;
             }
             try {
-                bitmap.setPixels(EyeRenderer.pixels(eyes, eyeOpen, settings.closing, settings.sleeping, settings.tilt), 0, 13, 0, 0, 13, 13);
+                int[] framePixels=EyeRenderer.pixels(eyes, eyeOpen, settings.closing, settings.sleeping, settings.tilt);
+                bitmap.setPixels(framePixels, 0, 13, 0, 0, 13, 13);
+                // RemoteViews are IPC updates; throttle to 2 FPS for launcher efficiency.
+                if(frameTime-lastWidgetFrame>=500){lastWidgetFrame=frameTime;GlyphEyesWidget.show(GravityEyesService.this,framePixels); }
                 GlyphMatrixObject object = new GlyphMatrixObject.Builder().setImageSource(bitmap).setBrightness(Math.max(1, Math.min(255, Math.round(settings.brightness * 2.55f)))).build();
                 // Use the structured frame: SDK selects the device's matrix length.
                 matrix.setMatrixFrame(new GlyphMatrixFrame.Builder().addTop(object).build(GravityEyesService.this));
@@ -83,7 +86,7 @@ public final class GravityEyesService extends Service implements SensorEventList
         }
     };
     @Override public IBinder onBind(Intent intent) {
-        active = true; lastFrame = 0; lastSensor = 0; gx = gy = 0;
+        active = true; lastFrame = 0; lastSensor = 0; lastWidgetFrame = 0; gx = gy = 0;
         settings = EyeSettings.load(this);
         motion.reset();nextBlink=0;blinking=false;
         PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
