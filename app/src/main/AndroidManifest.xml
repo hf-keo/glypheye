@@ -13,5 +13,9 @@
             <meta-data android:name="com.nothing.glyph.toy.image" android:resource="@drawable/eyes" />
             <meta-data android:name="com.nothing.glyph.toy.aod_support" android:value="1" />
         </service>
+        <receiver android:name=".GlyphEyesWidget" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/glyph_eyes_widget_info" />
+        </receiver>
     </application>
 </manifest>
