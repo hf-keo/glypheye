@@ -74,7 +74,11 @@ public final class GravityEyesService extends Service implements SensorEventList
                 else if(eyeOpen>=0.99f)eyeOpen*=phase<0.5f?1f-2f*phase:2f*phase-1f;
             }
             try {
-                int[] framePixels=EyeRenderer.pixels(eyes, eyeOpen, settings.closing, settings.sleeping, settings.tilt);
+                String reaction=EyeReactions.current(GravityEyesService.this,frameTime);
+                long reactionStart=getSharedPreferences("eye_reactions",0).getLong("start",0);
+                int[] framePixels=reaction.isEmpty()
+                    ?EyeRenderer.pixels(eyes,eyeOpen,settings.closing,settings.sleeping,settings.tilt)
+                    :EyeReactions.apply(eyes,settings,eyeOpen,reaction,frameTime-reactionStart);
                 bitmap.setPixels(framePixels, 0, 13, 0, 0, 13, 13);
                 // RemoteViews are IPC updates; throttle to 2 FPS for launcher efficiency.
                 if(frameTime-lastWidgetFrame>=500){lastWidgetFrame=frameTime;GlyphEyesWidget.show(GravityEyesService.this,framePixels); }
