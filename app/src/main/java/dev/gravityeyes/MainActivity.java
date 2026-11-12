@@ -10,6 +10,9 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.view.*;
 import android.widget.*;
+import android.provider.Settings;
+import android.app.NotificationManager;
+import android.content.ComponentName;
 
 public final class MainActivity extends Activity implements SensorEventListener {
     private SensorManager sensorManager;
@@ -26,6 +29,8 @@ public final class MainActivity extends Activity implements SensorEventListener 
     private final java.util.Random blinkRandom=new java.util.Random();
     private long nextBlink=0,blinkStarted=0;
     private boolean blinking=false;
+    private String previewReaction="";
+    private long previewReactionStart=0;
     private Preview preview;
     private TextView status;
     private boolean loop=false;
@@ -38,6 +43,13 @@ public final class MainActivity extends Activity implements SensorEventListener 
         t.setPadding(0,dp(10),0,dp(6));return t;
     }
     private void save(){EyeSettings.save(this,duration,brightness,tilt,closing,sleeping,motionMode,lockBehavior,wanderInterval,randomBlink,blinkInterval,blinkDuration);}
+    private void testReaction(String type){
+        previewReaction=type;
+        previewReactionStart=SystemClock.uptimeMillis();
+        EyeReactions.trigger(this,type,true);
+        preview.invalidate();
+        Toast.makeText(this,"Previewing "+type+" on app and widget",Toast.LENGTH_SHORT).show();
+    }
     private void transition(float target){from=openness;to=target;started=SystemClock.uptimeMillis();status.setText(target==0?"CLOSING...":"OPENING...");}
     private void actionButton(LinearLayout row,String name,Runnable action){
         Button b=new Button(this);b.setText(name);
@@ -97,6 +109,43 @@ public final class MainActivity extends Activity implements SensorEventListener 
         blinkSwitch.setOnCheckedChangeListener((button,checked)->{randomBlink=checked;nextBlink=0;blinking=false;save();});
         slider(root,"Average blink interval",96,(blinkInterval-2000)/250,p->{blinkInterval=2000+p*250;nextBlink=0;},()->String.format(java.util.Locale.US,"%.1f s",blinkInterval/1000f));
         slider(root,"Blink duration",22,(blinkDuration-80)/20,p->blinkDuration=80+p*20,()->blinkDuration+" ms");
+        root.addView(label("NOTIFICATION REACTIONS",18));
+        Switch notifySwitch=new Switch(this);
+        notifySwitch.setText("React to incoming notifications");
+        notifySwitch.setTextColor(0xfff1f1f1);
+        notifySwitch.setChecked(EyeReactions.enabled(this));
+        root.addView(notifySwitch);
+        notifySwitch.setOnCheckedChangeListener((v,checked)->EyeReactions.setEnabled(this,checked));
+        Button access=new Button(this);
+        access.setText("Grant notification access");
+        root.addView(access);
+        access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        Switch dnd=new Switch(this);dnd.setText("Respect Do Not Disturb");dnd.setTextColor(0xfff1f1f1);
+        dnd.setChecked(EyeReactions.respectDnd(this));root.addView(dnd);
+        dnd.setOnCheckedChangeListener((v,checked)->EyeReactions.setRespectDnd(this,checked));
+        slider(root,"Reaction duration",27,(EyeReactions.duration(this)-300)/100,
+            p->EyeReactions.setDuration(this,300+p*100),
+            ()->EyeReactions.duration(this)+" ms");
+        slider(root,"Notification cooldown",29,(EyeReactions.cooldown(this)-1000)/1000,
+            p->EyeReactions.setCooldown(this,1000+p*1000),
+            ()->EyeReactions.cooldown(this)/1000+" s");
+        root.addView(label("App allowlist (package names, comma-separated; blank = all)",13));
+        EditText allowlist=new EditText(this);allowlist.setSingleLine(false);
+        allowlist.setMinLines(1);allowlist.setText(EyeReactions.allowlist(this));
+        allowlist.setHint("e.g. com.whatsapp, org.telegram.messenger");
+        root.addView(allowlist);
+        allowlist.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence v,int start,int count,int after){}
+            public void onTextChanged(CharSequence v,int start,int before,int count){EyeReactions.setAllowlist(MainActivity.this,v.toString());}
+            public void afterTextChanged(android.text.Editable e){}
+        });
+        root.addView(label("TEST REACTIONS — app preview + 2×2 widget",14));
+        LinearLayout tests=row(root);
+        actionButton(tests,"Curious",()->testReaction(EyeReactions.CURIOUS));
+        actionButton(tests,"Surprised",()->testReaction(EyeReactions.SURPRISED));
+        tests=row(root);
+        actionButton(tests,"Sleepy",()->testReaction(EyeReactions.SLEEPY));
+        actionButton(tests,"Clear",()->{previewReaction="";preview.invalidate();});
         root.addView(label("CUSTOMIZATION",18));
         slider(root,"Sleep / wake duration",1100,duration-100,p->{duration=100+p;},()->duration+" ms");
         dropdown(root,"Closing style",new String[]{"Symmetrical closing","Upper eyelid drops","Lower eyelid rises"},new String[]{"center","top","bottom"},closing,v->closing=v);
@@ -136,6 +185,10 @@ public final class MainActivity extends Activity implements SensorEventListener 
             }
             if(loop&&started==0&&(lastLoop==0||now-lastLoop>1250)){lastLoop=now;transition(to==0?1:0);}
             int[] pixels=EyeRenderer.pixels(physics,openness*blinkOpenness,closing,sleeping,tilt);
+            if(!previewReaction.isEmpty()){
+                if(now-previewReactionStart>=EyeReactions.duration(MainActivity.this))previewReaction="";
+                else pixels=EyeReactions.apply(physics,EyeSettings.load(MainActivity.this),openness*blinkOpenness,previewReaction,now-previewReactionStart);
+            }
             float unit=Math.min(getWidth(),getHeight())/15f;
             float left=(getWidth()-13*unit)/2f,top=(getHeight()-13*unit)/2f;
             for(int y=0;y<13;y++)for(int x=0;x<13;x++){
