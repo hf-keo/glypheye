@@ -25,6 +25,13 @@ public final class GlyphEyesWidget extends AppWidgetProvider {
         context.getSharedPreferences(STORE,Context.MODE_PRIVATE).edit().putString("pixels",data.toString()).apply();
         refresh(context,pixels);
     }
+    public static void showReaction(Context context,String type){
+        EyeSettings settings=EyeSettings.load(context);
+        EyePhysics pose=new EyePhysics();
+        int[] frame=EyeReactions.apply(pose,settings,1f,type,300);
+        refresh(context,frame);
+        // A test remains visible until the next Glyph frame or widget refresh.
+    }
     public static void refresh(Context context,int[] frame){
         AppWidgetManager manager=AppWidgetManager.getInstance(context);
         ComponentName name=new ComponentName(context,GlyphEyesWidget.class);
